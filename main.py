@@ -82,7 +82,7 @@ with open("exampleData/data.csv") as fl:
                 break 
         lines.append(line)
 
-deploy_a_function("192.168.178.200", 8080, "map", "megamaxl/customer-mapper:latest")
+deploy_a_function("192.168.178.200", 8080, "map2", "megamaxl/customer-mapper:latest")
 
 #client.make_bucket(bucket_name="dry-run-inermediate")
 
@@ -95,7 +95,7 @@ for key in usedkeys:
         "key": str(key),
         "outputBucket": "dry-run-inermediate"
     })
-    thread = threading.Thread(target=invoke_a_function, args=("192.168.178.200", 8080, "map", data,))
+    thread = threading.Thread(target=invoke_a_function, args=("192.168.178.200", 8080, "map2", data,))
     threads.append(thread)
 
 for thread in threads:
