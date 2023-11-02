@@ -67,6 +67,7 @@ my_name = "dry-run"
 
 usedkeys = []
 
+print("start with data spliting")
 with open("exampleData/data.csv") as fl:
     key = 0
     lines = []
@@ -83,6 +84,7 @@ with open("exampleData/data.csv") as fl:
         lines.append(line)
 
 deploy_a_function("192.168.178.200", 8080, "map2", "megamaxl/customer-mapper:latest")
+print("depolyed mapper")
 
 #client.make_bucket(bucket_name="dry-run-inermediate")
 
@@ -98,6 +100,7 @@ for key in usedkeys:
     thread = threading.Thread(target=invoke_a_function, args=("192.168.178.200", 8080, "map2", data,))
     threads.append(thread)
 
+print("starting all mapper calls")
 for thread in threads:
     thread.start()
 
@@ -107,6 +110,46 @@ for thread in threads:
 
 print("All HTTP calls completed.")   
  
+threads.clear()
 
 #for key in usedkeys:
     #delete_a_function("192.168.178.200", 8080, "automaticmapper-"+ str(key), "megamaxl/customer-mapper:latest")
+
+paths = client.list_objects("dry-run-inermediate", prefix="key", recursive=True)
+
+intermediatekeys = []
+
+deploy_a_function("192.168.178.200", 8080, "reduce", "megamaxl/customer-reducer:latest")
+
+print("getting all intermediate keys")
+for object in paths:
+    intermediatekeys.append(object.object_name.split("/")[1])
+
+for idx, key_1 in enumerate(intermediatekeys):
+    data = json.dumps({
+        "bucketName": "dry-run-inermediate",
+        "key": str(key_1),
+        "outputBucket": "dry-run-done"
+    })
+    if idx > 0 and idx % 10 == 0:
+        for thread in threads:
+            thread.start()
+
+    # Wait for all threads to finish
+        for thread in threads:
+            thread.join()
+        
+        threads.clear()
+    
+    thread = threading.Thread(target=invoke_a_function, args=("192.168.178.200", 8080, "reduce", data,))
+    threads.append(thread)
+
+print("starting all reducer calls")
+for thread in threads:
+    thread.start()
+
+# Wait for all threads to finish
+for thread in threads:
+    thread.join()
+
+print("All HTTP calls completed. reduce")

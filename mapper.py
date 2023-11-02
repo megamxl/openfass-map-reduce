@@ -1,6 +1,7 @@
 from minio import Minio
 import io
 import json
+import http.client
 
 
 client = Minio(
@@ -10,20 +11,26 @@ client = Minio(
     secure=False
 )
 
-my_name = "test-bucket"
-customers = {}
+intermediatekeys = []
 
-try:
-    response = client.get_object(my_name,"2")
-    # Read data from response.
-    lines = json.loads(response.data.decode())
-    for line in lines:
-        line_parts = line.split(',')
-        curr_custmoer = line_parts[6]
-        if curr_custmoer not in customers: 
-            customers[curr_custmoer] = 0
-        customers[curr_custmoer] += 1
-finally:
-    print(customers)
-    response.close()
-    response.release_conn()
+intermidated_keys = client.list_objects("dry-run-inermediate", prefix="key", recursive=True)
+
+#for object in intermidated_keys:
+    #print(object.object_name.split("/")[1])
+
+def delete_a_function(ip, port, functioname, image):
+    conn = http.client.HTTPConnection(ip, port)
+    payload = json.dumps({
+        "functionName": functioname,
+    })
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic YWRtaW46WlcwVDNOODlrbG11'
+    }
+    conn.request("DELETE", "/system/functions", payload, headers)
+    res = conn.getresponse()
+    print(res.status)
+
+
+for i in range(30):
+    delete_a_function("192.168.178.200", 8080, "reduce-"+str(i), "")
