@@ -6,10 +6,15 @@ import time
 import threading
 
 
+with open('config.json') as config:
+    cofing_contnet = config.read()
+
+parsed_config = json.loads(cofing_contnet)
+
 client = Minio(
-    endpoint="192.168.178.250:9000",
-    access_key="minioadmin",
-    secret_key="minioadmin",
+    endpoint=parsed_config['minio-enpoint'],
+    access_key=parsed_config['minio-access_key'],
+    secret_key=parsed_config['minio-secret_key'],
     secure=False
 )
 
@@ -19,7 +24,7 @@ def deploy_a_function(ip, port, functioname, image):
         "service": functioname,
         "image": image,
         "envProcess": "",
-        "labels": {},
+        "labels": {"com.openfaas.scale.min":"5"},
         "annotations": {}
     })
     headers = {
@@ -61,20 +66,22 @@ def invoke_a_function(ip, port, functionName, body):
 #
 ###
 
-my_name = "dry-run"
+input_bucket = parsed_config['bucket-prefix'] + "-input"
 
-#client.make_bucket(bucket_name=my_name)
+client.make_bucket(bucket_name=input_bucket)
 
 usedkeys = []
+
+batch_size = parsed_config['input-bath-size']
 
 print("start with data spliting")
 with open("exampleData/data.csv") as fl:
     key = 0
     lines = []
     for index, line in enumerate(fl):
-        if index > 0 and index % 300 == 0:
+        if index > 0 and index % batch_size == 0:
             # put in object storage
-            client.put_object(my_name, str(key),  io.BytesIO(json.dumps(lines).encode('utf-8')), content_type= "application/json", length=-1, part_size=10*1024*1024)
+            client.put_object(input_bucket, str(key),  io.BytesIO(json.dumps(lines).encode('utf-8')), content_type= "application/json", length=-1, part_size=10*1024*1024)
             lines.clear()
             usedkeys.append(key)
             key = key +1
@@ -83,21 +90,26 @@ with open("exampleData/data.csv") as fl:
                 break 
         lines.append(line)
 
-deploy_a_function("192.168.178.200", 8080, "map2", "megamaxl/customer-mapper:latest")
+mapper_function_name = parsed_config['bucket-prefix'] + "-mapper"
+
+
+deploy_a_function(parsed_config['gateway-Ip'], parsed_config['gateway-Port'], mapper_function_name, parsed_config['mapFunction'])
 print("depolyed mapper")
 
-#client.make_bucket(bucket_name="dry-run-inermediate")
+
+intermidated_buket = parsed_config['bucket-prefix'] + "-intermidated"
+
+client.make_bucket(bucket_name=intermidated_buket)
 
 threads = []
 
-
 for key in usedkeys:
     data = json.dumps({
-        "bucketName": my_name,
+        "bucketName": input_bucket,
         "key": str(key),
-        "outputBucket": "dry-run-inermediate"
+        "outputBucket": intermidated_buket
     })
-    thread = threading.Thread(target=invoke_a_function, args=("192.168.178.200", 8080, "map2", data,))
+    thread = threading.Thread(target=invoke_a_function, args=(parsed_config['gateway-Ip'], parsed_config['gateway-Port'], mapper_function_name, data,))
     threads.append(thread)
 
 print("starting all mapper calls")
@@ -112,14 +124,18 @@ print("All HTTP calls completed.")
  
 threads.clear()
 
-#for key in usedkeys:
-    #delete_a_function("192.168.178.200", 8080, "automaticmapper-"+ str(key), "megamaxl/customer-mapper:latest")
-
-paths = client.list_objects("dry-run-inermediate", prefix="key", recursive=True)
+paths = client.list_objects(intermidated_buket, prefix="key", recursive=True)
 
 intermediatekeys = []
 
-deploy_a_function("192.168.178.200", 8080, "reduce", "megamaxl/customer-reducer:latest")
+reducer_function_name = parsed_config['bucket-prefix'] + "-reducer"
+
+deploy_a_function(parsed_config['gateway-Ip'], parsed_config['gateway-Port'], reducer_function_name, parsed_config['reduceFunction'])
+
+output_bucket = parsed_config['bucket-prefix'] + "-output"
+
+client.make_bucket(bucket_name=output_bucket)
+
 
 print("getting all intermediate keys")
 for object in paths:
@@ -127,11 +143,11 @@ for object in paths:
 
 for idx, key_1 in enumerate(intermediatekeys):
     data = json.dumps({
-        "bucketName": "dry-run-inermediate",
+        "bucketName": intermidated_buket,
         "key": str(key_1),
-        "outputBucket": "dry-run-done"
+        "outputBucket": output_bucket
     })
-    if idx > 0 and idx % 10 == 0:
+    if idx > 0 and idx % 50 == 0:
         for thread in threads:
             thread.start()
 
@@ -141,15 +157,7 @@ for idx, key_1 in enumerate(intermediatekeys):
         
         threads.clear()
     
-    thread = threading.Thread(target=invoke_a_function, args=("192.168.178.200", 8080, "reduce", data,))
+    thread = threading.Thread(target=invoke_a_function, args=(parsed_config['gateway-Ip'], parsed_config['gateway-Port'], reducer_function_name, data,))
     threads.append(thread)
-
-print("starting all reducer calls")
-for thread in threads:
-    thread.start()
-
-# Wait for all threads to finish
-for thread in threads:
-    thread.join()
 
 print("All HTTP calls completed. reduce")

@@ -1,0 +1,13 @@
+{
+    "minio-enpoint" : "192.168.178.250:9000",
+    "minio-access_key" : "minioadmin",
+    "minio-secret_key" : "minioadmin" ,
+    "input-bath-size" :  500,
+    "bucket-prefix" : "test-with-config",
+    "gateway-Ip" : "192.168.178.200",
+    "gateway-Port" : 8080,
+    "mapFunction" : "megamaxl/customer-mapper:latest",
+    "reduceFunction" : "megamaxl/customer-reducer:latest"
+    
+
+}
