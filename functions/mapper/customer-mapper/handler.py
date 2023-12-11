@@ -48,8 +48,7 @@ def handle(req):
     end_time = time.time()
     return json.dumps({
         "key" : str(my_key),
-        "starttime" : str(start_time),
-        "end_time": str(end_time)
+        "time" : end_time - start_time,
     })
 
 

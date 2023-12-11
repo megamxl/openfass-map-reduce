@@ -34,6 +34,7 @@ def deploy_a_function(ip, port, functioname, image):
     conn.request("POST", "/system/functions", payload, headers)
     res = conn.getresponse()
     print(res.status)
+    time.sleep(20)
 
 
 def delete_a_function(ip, port, functioname, image):
@@ -57,7 +58,28 @@ def invoke_a_function(ip, port, functionName, body):
     conn.request("GET", "/function/"+ functionName, body, headers)
     res = conn.getresponse()
     data = res.read()
+    #TODO Error handling if function dose not get run append it to error lsit and do it again
+    if res.code != 200 and res.code != 202:
+        failed_req.append([ip,port,functionName,body])
     print(data.decode("utf-8"))
+
+
+def reDoingRequests(req):
+    localtread = []
+    for idx, key_1 in enumerate(req):
+        if idx > 0 and idx % 20 == 0:
+            for thread in localtread:
+                thread.start()
+
+            # Wait for all threads to finish
+            for thread in localtread:
+                thread.join()
+            
+            localtread.clear()
+        
+        thread = threading.Thread(target=invoke_a_function, args=(key_1[0], key_1[1], key_1[2], key_1[3],))
+        localtread.append(thread)
+
 ## find out which customer purchaed the most things 
 
 ###
@@ -71,6 +93,7 @@ input_bucket = parsed_config['bucket-prefix'] + "-input"
 client.make_bucket(bucket_name=input_bucket)
 
 usedkeys = []
+failed_req = []
 
 batch_size = parsed_config['input-bath-size']
 
@@ -86,43 +109,70 @@ with open("exampleData/data.csv") as fl:
             usedkeys.append(key)
             key = key +1
             #TODO ROEMOVE
-            if key == 11:
+            if key == 100:
                 break 
         lines.append(line)
 
-mapper_function_name = parsed_config['bucket-prefix'] + "-mapper"
+###
+# 
+#  Second Step take all chunks and put them into http requests / doing the mapper calls
+#
+###
 
+star_time = time.time()
+
+mapper_function_name = parsed_config['bucket-prefix'] + "-mapper"
 
 deploy_a_function(parsed_config['gateway-Ip'], parsed_config['gateway-Port'], mapper_function_name, parsed_config['mapFunction'])
 print("depolyed mapper")
-
 
 intermidated_buket = parsed_config['bucket-prefix'] + "-intermidated"
 
 client.make_bucket(bucket_name=intermidated_buket)
 
 threads = []
-
-for key in usedkeys:
+print(f"Doing {len(usedkeys)} mapper calls ")
+for idx, key_1 in enumerate(usedkeys):
     data = json.dumps({
         "bucketName": input_bucket,
-        "key": str(key),
+        "key": str(key_1),
         "outputBucket": intermidated_buket
     })
+    if idx > 0 and idx % 50 == 0:
+        for thread in threads:
+            thread.start()
+
+    # Wait for all threads to finish
+        for thread in threads:
+            thread.join()
+        
+        threads.clear()
+        print("")
+    
     thread = threading.Thread(target=invoke_a_function, args=(parsed_config['gateway-Ip'], parsed_config['gateway-Port'], mapper_function_name, data,))
     threads.append(thread)
 
-print("starting all mapper calls")
 for thread in threads:
-    thread.start()
+            thread.start()
 
 # Wait for all threads to finish
 for thread in threads:
     thread.join()
 
-print("All HTTP calls completed.")   
- 
 threads.clear()
+
+print(f"there were {len(failed_req)} failed request doing them again")
+
+if len(failed_req) != 0:
+    reDoingRequests(failed_req)
+    
+failed_req.clear()
+
+###
+# 
+#  Third Step take all intermidiate keys an do the reducer calls
+#
+###
 
 paths = client.list_objects(intermidated_buket, prefix="key", recursive=True)
 
@@ -132,15 +182,17 @@ reducer_function_name = parsed_config['bucket-prefix'] + "-reducer"
 
 deploy_a_function(parsed_config['gateway-Ip'], parsed_config['gateway-Port'], reducer_function_name, parsed_config['reduceFunction'])
 
+print("Deployed the reducer function")
+
 output_bucket = parsed_config['bucket-prefix'] + "-output"
 
 client.make_bucket(bucket_name=output_bucket)
-
 
 print("getting all intermediate keys")
 for object in paths:
     intermediatekeys.append(object.object_name.split("/")[1])
 
+print(f"Doing {len(intermediatekeys)} reducer calls ")
 for idx, key_1 in enumerate(intermediatekeys):
     data = json.dumps({
         "bucketName": intermidated_buket,
@@ -160,4 +212,17 @@ for idx, key_1 in enumerate(intermediatekeys):
     thread = threading.Thread(target=invoke_a_function, args=(parsed_config['gateway-Ip'], parsed_config['gateway-Port'], reducer_function_name, data,))
     threads.append(thread)
 
-print("All HTTP calls completed. reduce")
+print(f"there were {len(failed_req)} failed request doing them again")
+
+if len(failed_req) != 0:
+    reDoingRequests(failed_req)
+
+
+end_time = time.time()
+
+sec_between = end_time -star_time
+
+print("All Done Here are your statistics nows")
+print("")
+print("")
+print(f"The time elapesd between the first fuction deploy until now are {sec_between}" )

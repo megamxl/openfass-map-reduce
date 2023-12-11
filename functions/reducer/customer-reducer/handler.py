@@ -32,16 +32,15 @@ def handle(req):
         response = client.get_object(my_name, obj.object_name)
         line = json.loads(response.data.decode())
         amount = amount + int(line["value"])    
-    
+                
     client.put_object(outputbucket, my_key, io.BytesIO(json.dumps({my_key : amount}).encode('utf-8')), length=-1, part_size=10*1024*1024 , content_type= "application/json")
 
     end_time = time.time()
     return json.dumps({
         "key" : my_key,
-        "start_time" : start_time,
-        "end_time" : end_time
+        "time" : end_time - start_time
     })
 
 
 def emitValues(outputDict, client):
-   return True
+    return True
