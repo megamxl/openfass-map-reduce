@@ -109,8 +109,8 @@ with open("exampleData/data.csv") as fl:
             usedkeys.append(key)
             key = key +1
             #TODO ROEMOVE
-            if key == 100:
-                break 
+            #if key == 100:
+            #    break 
         lines.append(line)
 
 ###
